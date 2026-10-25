@@ -1,0 +1,65 @@
+name: Build Non-JIT Playable Vita3K iOS App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_ios:
+    name: Native Xcode iOS Compile
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Code Base
+        uses: actions/checkout@v4
+        with:
+          repository: 'vion-app-org/Vion'
+          ref: 'native-ios-port'
+          submodules: recursive
+
+      - name: Select Xcode App Environment
+        run: |
+          # Forces the runner to use the full Xcode application bundle containing the iPhoneOS SDKs
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Configure CMake for Apple Xcode
+        run: |
+          cmake -B build_ios \
+            -G "Xcode" \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_CODE_SIGNING=OFF \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT="dwarf" \
+            -DCMAKE_CXX_FLAGS="-O3 -flto -DNDEBUG" \
+            -DCMAKE_C_FLAGS="-O3 -flto -DNDEBUG"
+
+      - name: Execute Xcode Build Compilation
+        run: |
+          cmake --build build_ios --config Release -- -sdk iphoneos
+
+      - name: Dynamically Find and Package Binary Output
+        run: |
+          mkdir -p build_ios/ipa/Payload
+          
+          TARGET_APP=$(find build_ios -name "*.app" -type d | head -n 1)
+          
+          if [ -z "$TARGET_APP" ]; then
+            echo "❌ ERROR: No compiled app binary found in the build directory!"
+            exit 1
+          fi
+          
+          echo "Found compiled app package at: $TARGET_APP"
+          cp -r "$TARGET_APP" build_ios/ipa/Payload/
+          
+          cd build_ios/ipa
+          zip -9 -r ../../Vion_Vita3K_NoJIT_Interpreter.ipa Payload
+          cd ../..
+
+      - name: Export Executable Asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: Non-JIT-Vita3K-IPA
+          path: Vion_Vita3K_NoJIT_Interpreter.ipa
